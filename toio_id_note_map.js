@@ -639,13 +639,12 @@ export const TOIO_ID_NOTE_MAP = {
     "midi": 139,
     "freq_hz": 25087.70790283195
   }
-
 };
 
-// --- Helpers for audio/UI (WebAudio / Tone.js)
+// --- Helpers for audio/UI (WebAudio / SoundFont)
 // Convert MIDI number to scientific pitch notation (e.g., 60 -> C4)
 export function midiToNoteName(midi) {
-  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const names = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
   const n = Math.round(Number(midi));
   const name = names[((n % 12) + 12) % 12];
   const octave = Math.floor(n / 12) - 1; // MIDI 60 = C4
@@ -662,7 +661,7 @@ export function getPlayableNoteFromToioId(toioId, transposeSemitones = 36) {
   const baseMidi = Number(m.midi);
   const midi = baseMidi + Number(transposeSemitones);
 
-  // Prefer recomputing frequency from MIDI so transposition stays correct.
+  // Recompute frequency from MIDI so transposition stays correct.
   const freq_hz = 440 * Math.pow(2, (midi - 69) / 12);
 
   return {
