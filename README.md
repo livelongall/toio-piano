@@ -1,22 +1,11 @@
-# speaker_toio (toio x Piano)
+# toio x Piano (patched: sampler load guard)
 
-## Run (Important)
-Web Bluetooth requires **HTTPS** or **localhost**.
-Use Chrome / Edge.
+Fixes:
+- Waits for Tone.js sampler buffers to load before playing (avoids 'buffer is either not set or not loaded')
+- Uses jsDelivr CDN for Salamander samples (avoids tonejs.github.io blocks)
+- Falls back to a synth if samples can't load (network restriction / timeout)
 
-### Local run
-```bash
-python -m http.server 8000
-```
-Then open:
-- http://localhost:8000
-
-## Files
-- index.html
-- main.js
-- toio_id_note_map.js
-
-## Notes
-- Click/touch the on-screen keyboard to play notes in the browser (green highlight).
-- Connect Cube A/B to play from toio ID and highlight keys (blue/orange).
-- Cube Speaker toggle controls whether the cube's internal speaker plays too.
+Run:
+- Use localhost or HTTPS
+  python -m http.server 8000
+  open http://localhost:8000
