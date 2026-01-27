@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>toio x Piano</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 16px; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    button { font-size: 16px; padding: 10px 14px; }
+    #log { white-space: pre-wrap; background:#f6f6f6; padding:12px; border-radius:8px; margin-top:12px; }
+    .kbdWrap { margin-top: 16px; overflow-x:auto; padding-bottom: 10px; }
+
+    /* Piano */
+    .piano { position: relative; height: 180px; display: inline-block; touch-action: none; user-select: none; }
+    .key.white {
+      position: relative;
+      display:inline-block;
+      width: 38px; height: 180px;
+      border: 1px solid #999;
+      background: #fff;
+      box-sizing: border-box;
+      border-radius: 0 0 6px 6px;
+      margin-right: 2px;
+      cursor: pointer;
+    }
+    .key.black {
+      position: absolute;
+      width: 26px; height: 110px;
+      background: #111;
+      border-radius: 0 0 6px 6px;
+      border: 1px solid #000;
+      top: 0;
+      z-index: 2;
+      cursor: pointer;
+    }
+
+    /* Highlight (A/B) */
+    .pressedA.white { background: rgba(0, 180, 255, 0.35); }
+    .pressedB.white { background: rgba(255, 120, 0, 0.35); }
+    .pressedA.black { background: rgba(0, 180, 255, 0.9); }
+    .pressedB.black { background: rgba(255, 120, 0, 0.9); }
+
+    /* Highlight (User click) */
+    .pressedU.white { background: rgba(120, 255, 120, 0.35); }
+    .pressedU.black { background: rgba(120, 255, 120, 0.9); }
+
+    .legend { margin-top: 8px; display:flex; gap:14px; align-items:center; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display:inline-block; }
+    .dot.a { background: rgb(0,180,255); }
+    .dot.b { background: rgb(255,120,0); }
+  </style>
+</head>
+<body>
+  <h1>toio x Piano</h1>
+
+  <div class="row">
+    <button id="btnA">Connect Cube A</button>
+    <button id="btnB">Connect Cube B</button>
+    <button id="btnStop">Stop</button>
+    <label class="row" style="gap:6px;">
+      Instrument:
+      <select id="instrument">
+        <option value="acoustic_grand_piano" selected>Acoustic Grand Piano</option>
+        <option value="electric_piano_1">Electric Piano 1</option>
+        <option value="marimba">Marimba</option>
+        <option value="vibraphone">Vibraphone</option>
+        <option value="church_organ">Church Organ</option>
+        <option value="acoustic_guitar_nylon">Nylon Guitar</option>
+        <option value="violin">Violin</option>
+        <option value="trumpet">Trumpet</option>
+        <option value="flute">Flute</option>
+        <option value="synth_brass_1">Synth Brass 1</option>
+      </select>
+    </label>
+    <label class="row" style="gap:6px;">
+      Cube Speaker:
+      <input id="cubeSound" type="checkbox" checked />
+      <span style="font-size:12px; opacity:0.8;">ON</span>
+    </label>
+    <label class="row" style="gap:6px;">
+      Transpose:
+      <select id="transpose">
+        <option value="24">+24</option>
+        <option value="36" selected>+36</option>
+        <option value="48">+48</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot a"></span> Cube A</span>
+    <span><span class="dot b"></span> Cube B</span>
+  </div>
+
+  <div class="kbdWrap">
+    <div id="piano" class="piano" aria-label="piano keyboard"></div>
+  </div>
+
+  <div id="log" aria-live="polite"></div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
