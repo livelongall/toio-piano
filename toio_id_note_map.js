@@ -651,6 +651,9 @@ export function midiToNoteName(midi) {
   return `${name}${octave}`;
 }
 
+// ★ここがポイント：全体が1オクターブ高いので、恒久的に -12 補正する
+const OCTAVE_FIX = -24;
+
 // Look up toio Standard ID string/number and return a playable note.
 // transposeSemitones: shift the mapping to an audible range (e.g., +24 or +36).
 export function getPlayableNoteFromToioId(toioId, transposeSemitones = 36) {
@@ -659,7 +662,9 @@ export function getPlayableNoteFromToioId(toioId, transposeSemitones = 36) {
   if (!m) return null;
 
   const baseMidi = Number(m.midi);
-  const midi = baseMidi + Number(transposeSemitones);
+
+  // ✅ 1オクターブ下げる補正をここで適用
+  const midi = baseMidi + Number(transposeSemitones) + OCTAVE_FIX;
 
   // Recompute frequency from MIDI so transposition stays correct.
   const freq_hz = 440 * Math.pow(2, (midi - 69) / 12);
@@ -673,3 +678,4 @@ export function getPlayableNoteFromToioId(toioId, transposeSemitones = 36) {
     freq_hz,
   };
 }
+

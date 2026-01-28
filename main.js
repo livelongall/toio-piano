@@ -5,6 +5,8 @@ const TOIO_SERVICE_UUID = "10b20100-5b3b-4571-9508-cf3efcd7bbae";
 const ID_CHARACTERISTIC_UUID = "10b20101-5b3b-4571-9508-cf3efcd7bbae";
 const LIGHT_CHARACTERISTIC_UUID = "10b20103-5b3b-4571-9508-cf3efcd7bbae";
 const SOUND_CHARACTERISTIC_UUID = "10b20104-5b3b-4571-9508-cf3efcd7bbae";
+// Motor characteristic for toio motors
+const MOTOR_CHARACTERISTIC_UUID = "10b20102-5b3b-4571-9508-cf3efcd7bbae";
 
 const logEl = document.querySelector("#log");
 const log = (s) => { logEl.textContent = s + "\n" + logEl.textContent; };
@@ -14,20 +16,33 @@ const transposeEl = document.querySelector("#transpose");
 const instrumentEl = document.querySelector("#instrument");
 const cubeSoundEl = document.querySelector("#cubeSound");
 const testNotesEl = document.querySelector("#testNotes");
+const btnLayoutEl = document.querySelector("#btnLayout");
+const btnRun20El = document.querySelector("#btnRun20"); // may be null if index.html not updated
+
+// --- GLOBAL SHIFT: lower everything by 1 octave (-12)
+const GLOBAL_MIDI_SHIFT = -12;
 
 // --- Piano UI -------------------------------------------------
-const WHITE = new Set([0, 2, 4, 5, 7, 9, 11]);
+const WHITE = new Set([0,2,4,5,7,9,11]);
 function isBlack(midi){ return !WHITE.has(((midi % 12) + 12) % 12); }
 
-const PIANO_MIN = 48; // C3
-const PIANO_MAX = 84; // C6
+const PIANO_MIN = 48;  // C3
+const PIANO_MAX = 84;  // C6
+
+function readKeyMetrics() {
+  const rootStyle = getComputedStyle(document.documentElement);
+  const whiteW = parseFloat(rootStyle.getPropertyValue("--whiteW")) || 38;
+  const gap = parseFloat(rootStyle.getPropertyValue("--gap")) || 2;
+  const blackOffset = parseFloat(rootStyle.getPropertyValue("--blackOffset")) || 26;
+  return { whiteW, gap, blackOffset };
+}
 
 function buildPiano() {
   pianoEl.innerHTML = "";
   const whiteMidis = [];
   for (let m = PIANO_MIN; m <= PIANO_MAX; m++) if (!isBlack(m)) whiteMidis.push(m);
 
-  // white keys
+  // render white keys
   whiteMidis.forEach((m) => {
     const key = document.createElement("div");
     key.className = "key white";
@@ -35,8 +50,10 @@ function buildPiano() {
     pianoEl.appendChild(key);
   });
 
-  // black keys
-  const whiteIndexByMidi = new Map(whiteMidis.map((m, i) => [m, i]));
+  // render black keys
+  const { whiteW, gap, blackOffset } = readKeyMetrics();
+  const whiteIndexByMidi = new Map(whiteMidis.map((m,i)=>[m,i]));
+
   for (let m = PIANO_MIN; m <= PIANO_MAX; m++) {
     if (!isBlack(m)) continue;
     const leftWhite = m - 1;
@@ -46,11 +63,29 @@ function buildPiano() {
     const black = document.createElement("div");
     black.className = "key black";
     black.dataset.midi = String(m);
-    black.style.left = `${i * (38 + 2) + 26}px`;
+
+    const leftPx = i * (whiteW + gap) + blackOffset;
+    black.style.left = `${leftPx}px`;
     pianoEl.appendChild(black);
   }
 
-  pianoEl.style.width = `${whiteMidis.length * (38 + 2)}px`;
+  pianoEl.style.width = `${whiteMidis.length * (whiteW + gap)}px`;
+
+  applyLayoutSizing();
+}
+
+function applyLayoutSizing() {
+  // In vertical mode we rotate -90deg; adjust marginTop so it doesn't clip.
+  const isVertical = document.body.classList.contains("vertical");
+  if (!isVertical) {
+    pianoEl.style.marginTop = "0px";
+    return;
+  }
+
+  // After rotation, the element's visual height corresponds to its original width.
+  // We add marginTop roughly equal to its width so the rotated content appears in view.
+  const w = pianoEl.scrollWidth || pianoEl.getBoundingClientRect().width || 0;
+  pianoEl.style.marginTop = `${Math.max(0, Math.floor(w) + 12)}px`;
 }
 
 function clearPressed(tag){
@@ -71,13 +106,11 @@ function pressKeyUser(midi){
 }
 
 // --- Audio (Pure WebAudio: no external mp3, no Tone.js) -------
-// Chrome autoplay policy: create/resume AudioContext ONLY after a user gesture.
 let audioCtx = null;
 let masterGain = null;
-let filterNode = null; // optional "rich" filter
+let filterNode = null;
 
 function getWaveType() {
-  // Map your existing select values to oscillator types
   const v = instrumentEl?.value || "acoustic_grand_piano";
   if (v === "church_organ") return "square";
   if (v === "flute") return "sine";
@@ -86,19 +119,16 @@ function getWaveType() {
   if (v === "electric_piano_1") return "triangle";
   if (v === "marimba" || v === "vibraphone") return "triangle";
   if (v === "acoustic_guitar_nylon") return "triangle";
-  // default
   return "sine";
 }
 
 async function ensureAudio() {
-  // MUST be called from user gesture (click/pointerdown)
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
 
     masterGain = audioCtx.createGain();
     masterGain.gain.value = 0.9;
 
-    // A simple lowpass for a slightly richer/less harsh sound (optional)
     filterNode = audioCtx.createBiquadFilter();
     filterNode.type = "lowpass";
     filterNode.frequency.value = 8000;
@@ -119,11 +149,9 @@ function midiToFreq(midi) {
   return 440 * Math.pow(2, (n - 69) / 12);
 }
 
-// Simple "voice" (press-and-hold)
 function createVoice(freqHz) {
   const now = audioCtx.currentTime;
 
-  // 2 oscillators (detune) -> richer than 1 osc
   const osc1 = audioCtx.createOscillator();
   const osc2 = audioCtx.createOscillator();
   osc1.type = getWaveType();
@@ -131,15 +159,14 @@ function createVoice(freqHz) {
 
   osc1.frequency.setValueAtTime(freqHz, now);
   osc2.frequency.setValueAtTime(freqHz, now);
-  osc2.detune.setValueAtTime(+7, now); // slight detune
+  osc2.detune.setValueAtTime(+7, now);
 
   const gain = audioCtx.createGain();
   gain.gain.setValueAtTime(0.0, now);
 
-  // Attack/Release envelope
-  const attack = 0.01;
-  const sustain = 0.55;
-  gain.gain.linearRampToValueAtTime(sustain, now + attack);
+  const a = 0.01;
+  const s = 0.55;
+  gain.gain.linearRampToValueAtTime(s, now + a);
 
   osc1.connect(gain);
   osc2.connect(gain);
@@ -151,59 +178,59 @@ function createVoice(freqHz) {
   return {
     stop: () => {
       const t = audioCtx.currentTime;
-      const release = 0.08;
+      const r = 0.08;
       gain.gain.cancelScheduledValues(t);
       gain.gain.setValueAtTime(gain.gain.value, t);
-      gain.gain.linearRampToValueAtTime(0.0, t + release);
-      osc1.stop(t + release + 0.02);
-      osc2.stop(t + release + 0.02);
+      gain.gain.linearRampToValueAtTime(0.0, t + r);
+      osc1.stop(t + r + 0.02);
+      osc2.stop(t + r + 0.02);
     },
   };
 }
 
-// Track playing notes
-const userVoices = new Map(); // midi -> voice
-
-function userStart(midi) {
+const voices = new Map(); // midi(playMidi) -> voice
+function startNote(midi) {
   if (!audioCtx) return;
-  if (userVoices.has(midi)) return;
+  if (voices.has(midi)) return;
   const v = createVoice(midiToFreq(midi));
-  userVoices.set(midi, v);
+  voices.set(midi, v);
 }
-function userStop(midi) {
-  const v = userVoices.get(midi);
+function stopNote(midi) {
+  const v = voices.get(midi);
   if (!v) return;
   v.stop();
-  userVoices.delete(midi);
+  voices.delete(midi);
 }
-function userStopAll() {
-  for (const [m, v] of userVoices.entries()) {
+function stopAllNotes() {
+  for (const [m, v] of voices.entries()) {
     v.stop();
-    userVoices.delete(m);
+    voices.delete(m);
   }
 }
 
-// --- BLE / toio ID notification parsing ----------------------
+function clampMidi(n) {
+  const x = Number(n) | 0;
+  return Math.max(0, Math.min(127, x));
+}
+
+// --- BLE / toio ID parsing -----------------------------------
 function parseIdNotification(dataView) {
   const kind = dataView.getUint8(0);
-  if (kind === 0x02) { // Standard ID
+  if (kind === 0x02) {
     const standardId = dataView.getUint32(1, true);
     const angle = dataView.getUint16(5, true);
     return { type: "standard", standardId, angle };
   }
-  if (kind === 0x04) { // Standard ID missed
-    return { type: "missed" };
-  }
+  if (kind === 0x04) return { type: "missed" };
   return { type: "other", kind };
 }
 
 // --- Two cubes ------------------------------------------------
 const cubeState = {
-  A: { device:null, idChar:null, lightChar:null, soundChar:null, currentMidi:null },
-  B: { device:null, idChar:null, lightChar:null, soundChar:null, currentMidi:null },
+  A: { device:null, idChar:null, lightChar:null, soundChar:null, motorChar:null, currentMidi:null, currentPlayMidi:null },
+  B: { device:null, idChar:null, lightChar:null, soundChar:null, motorChar:null, currentMidi:null, currentPlayMidi:null },
 };
 
-// Lamp: keep on while connected (A=blue, B=orange)
 function rgbForTag(tag) {
   return tag === "A" ? { r: 0, g: 180, b: 255 } : { r: 255, g: 120, b: 0 };
 }
@@ -214,7 +241,6 @@ async function setCubeLamp(tag) {
   await ch.writeValueWithResponse(new Uint8Array([0x03, 0x00, 0x01, 0x01, r, g, b]));
 }
 
-// Cube speaker
 async function cubeStopSound(tag) {
   const ch = cubeState[tag].soundChar;
   if (!ch) return;
@@ -223,12 +249,40 @@ async function cubeStopSound(tag) {
 async function cubePlayMidi(tag, midiNote) {
   const ch = cubeState[tag].soundChar;
   if (!ch) return;
-  // [0x03, repeat(0=infinite), opCount(1), duration(0xFF=2550ms), midi, volume]
   await ch.writeValueWithResponse(new Uint8Array([0x03, 0x00, 0x01, 0xFF, midiNote & 0x7F, 0xFF]));
 }
 
+// Motor control: forward both motors at speed
+async function writeMotor(ch, bytes) {
+  if (!ch) return;
+  const data = new Uint8Array(bytes);
+
+  // Motor characteristic is "Write without response"
+  // so prefer writeValueWithoutResponse when available.
+  if (ch.writeValueWithoutResponse) {
+    await ch.writeValueWithoutResponse(data);
+  } else {
+    // fallback (some browsers expose only writeValue)
+    await ch.writeValue(data);
+  }
+}
+
+async function cubeRun(tag, speed = 20) {
+  const ch = cubeState[tag].motorChar;
+  const s = Math.max(0, Math.min(255, speed | 0));
+
+  // Motor control (0x01): keep running until next command  [oai_citation:1‡toio.github.io](https://toio.github.io/toio-spec/docs/ble_motor/)
+  // [0x01, leftId=1, leftDir=1(fwd), leftSpeed, rightId=2, rightDir=1(fwd), rightSpeed]
+  await writeMotor(ch, [0x01, 0x01, 0x01, s, 0x02, 0x01, s]);
+}
+
+async function cubeStopMotor(tag) {
+  const ch = cubeState[tag].motorChar;
+  // speed=0 to stop
+  await writeMotor(ch, [0x01, 0x01, 0x01, 0x00, 0x02, 0x01, 0x00]);
+}
+
 async function connectCube(tag) {
-  // NOTE: connect button is a user gesture, safe to start audio here
   await ensureAudio();
 
   const device = await navigator.bluetooth.requestDevice({
@@ -237,13 +291,15 @@ async function connectCube(tag) {
 
   device.addEventListener("gattserverdisconnected", () => {
     log(`Cube ${tag}: disconnected`);
-    const curMidi = cubeState[tag].currentMidi;
-    if (curMidi !== null && curMidi !== undefined) {
-      userStop(curMidi);
-      cubeState[tag].currentMidi = null;
-    }
+    // stop any playing note for this cube (use currentPlayMidi)
+    const playMidi = cubeState[tag].currentPlayMidi;
+    if (playMidi !== null && playMidi !== undefined) stopNote(playMidi);
+    cubeState[tag].currentMidi = null;
+    cubeState[tag].currentPlayMidi = null;
     clearPressed(tag);
     cubeStopSound(tag).catch(() => {});
+    // also try stop motor
+    cubeStopMotor(tag).catch(() => {});
   });
 
   const server = await device.gatt.connect();
@@ -252,17 +308,25 @@ async function connectCube(tag) {
   const idCh = await service.getCharacteristic(ID_CHARACTERISTIC_UUID);
   const lightCh = await service.getCharacteristic(LIGHT_CHARACTERISTIC_UUID);
   const soundCh = await service.getCharacteristic(SOUND_CHARACTERISTIC_UUID);
+  // motor characteristic
+  let motorCh = null;
+  try {
+    motorCh = await service.getCharacteristic(MOTOR_CHARACTERISTIC_UUID);
+  } catch (e) {
+    // some devices or firmwares may not expose; log and continue
+    log(`Cube ${tag}: motor characteristic not available (${e})`);
+  }
 
   cubeState[tag].device = device;
   cubeState[tag].idChar = idCh;
   cubeState[tag].lightChar = lightCh;
   cubeState[tag].soundChar = soundCh;
+  cubeState[tag].motorChar = motorCh;
 
   await setCubeLamp(tag);
 
   await idCh.startNotifications();
-  idCh.addEventListener("characteristicvaluechanged", async (ev) => {
-    // Notifications are NOT guaranteed as user gesture, but audioCtx is already running after connect.
+  idCh.addEventListener("characteristicvaluechanged", (ev) => {
     const dv = ev.target.value;
     const msg = parseIdNotification(dv);
 
@@ -274,29 +338,34 @@ async function connectCube(tag) {
         return;
       }
 
-      // Keep playing while detected: switch only when note changes
-      const prevMidi = cubeState[tag].currentMidi;
-      const nextMidi = playable.midi;
+      const uiMidi = playable.midi; // for UI/highlight
+      const playMidi = clampMidi(uiMidi + GLOBAL_MIDI_SHIFT); // actual sounding midi
 
-      if (prevMidi !== nextMidi) {
-        if (prevMidi !== null && prevMidi !== undefined) userStop(prevMidi);
-        userStart(nextMidi);
-        cubeState[tag].currentMidi = nextMidi;
+      const prevPlay = cubeState[tag].currentPlayMidi;
+
+      if (prevPlay !== playMidi) {
+        if (prevPlay !== null && prevPlay !== undefined) stopNote(prevPlay);
+        startNote(playMidi);
+        cubeState[tag].currentPlayMidi = playMidi;
+        cubeState[tag].currentMidi = uiMidi;
       }
 
-      pressKey(nextMidi, tag);
+      // UI highlight uses uiMidi
+      pressKey(uiMidi, tag);
 
+      // Cube speaker: send actual sounding midi
       if (cubeSoundEl?.checked) {
-        cubePlayMidi(tag, nextMidi).catch(e => log(`Cube ${tag} sound error: ${e}`));
+        cubePlayMidi(tag, playMidi).catch(e => log(`Cube ${tag} sound error: ${e}`));
       }
 
-      log(`Cube ${tag}: ID=${playable.toioId} => ${playable.noteName} angle=${msg.angle}`);
+      log(`Cube ${tag}: ID=${playable.toioId} => ${playable.noteName} (ui:${uiMidi} play:${playMidi}) angle=${msg.angle}`);
     }
 
     if (msg.type === "missed") {
-      const curMidi = cubeState[tag].currentMidi;
-      if (curMidi !== null && curMidi !== undefined) userStop(curMidi);
+      const playMidi = cubeState[tag].currentPlayMidi;
+      if (playMidi !== null && playMidi !== undefined) stopNote(playMidi);
       cubeState[tag].currentMidi = null;
+      cubeState[tag].currentPlayMidi = null;
       clearPressed(tag);
       cubeStopSound(tag).catch(() => {});
       log(`Cube ${tag}: missed`);
@@ -321,17 +390,21 @@ function getMidiFromTestButton(t) {
 }
 
 let userPressedMidi = null;
+let userPressedPlayMidi = null;
 
 async function userAttack(midi) {
   await ensureAudio();
-  userPressedMidi = midi;
+  userPressedMidi = midi; // UI midi
+  const playMidi = clampMidi(midi + GLOBAL_MIDI_SHIFT);
+  userPressedPlayMidi = playMidi;
   pressKeyUser(midi);
-  userStart(midi);
+  startNote(playMidi);
 }
 function userRelease() {
   if (userPressedMidi === null) return;
-  userStop(userPressedMidi);
+  stopNote(userPressedPlayMidi);
   userPressedMidi = null;
+  userPressedPlayMidi = null;
   clearPressedUser();
 }
 
@@ -367,23 +440,53 @@ testNotesEl?.addEventListener("pointerup", (e) => {
 testNotesEl?.addEventListener("pointercancel", () => userRelease());
 testNotesEl?.addEventListener("pointerleave", () => userRelease());
 
+// --- Layout toggle (B) ---------------------------------------
+btnLayoutEl?.addEventListener("click", () => {
+  const v = document.body.classList.toggle("vertical");
+  btnLayoutEl.textContent = v ? "Layout: Vertical" : "Layout: Horizontal";
+  applyLayoutSizing();
+});
+
+// Run(20) button: drive connected cubes at speed 20
+btnRun20El?.addEventListener("click", async () => {
+  // If button not present, nothing happens
+  try {
+    let any = false;
+    if (cubeState.A.device) {
+      await cubeRun("A", 20);
+      any = true;
+    }
+    if (cubeState.B.device) {
+      await cubeRun("B", 20);
+      any = true;
+    }
+    log(any ? "Run: speed 20" : "No cubes connected to run");
+  } catch (e) {
+    log("Run error: " + e);
+  }
+});
+
 // --- UI events ------------------------------------------------
 buildPiano();
 
 document.querySelector("#btnA").addEventListener("click", () => connectCube("A").catch(e => log("Error A: " + e)));
 document.querySelector("#btnB").addEventListener("click", () => connectCube("B").catch(e => log("Error B: " + e)));
+
 document.querySelector("#btnStop").addEventListener("click", () => {
-  userStopAll();
+  // stop audio notes
+  stopAllNotes();
+  // stop cube sounds & motors, clear UI
   for (const tag of ["A","B"]) {
     clearPressed(tag);
     cubeStopSound(tag).catch(() => {});
+    cubeStopMotor(tag).catch(() => {});
     cubeState[tag].currentMidi = null;
+    cubeState[tag].currentPlayMidi = null;
   }
   clearPressedUser();
 });
 
 instrumentEl?.addEventListener("change", () => {
-  // Wave type changes will apply on next note start
   log(`Instrument(wave) changed: ${instrumentEl.value}`);
 });
 
@@ -392,10 +495,18 @@ cubeSoundEl?.addEventListener("change", () => {
     cubeStopSound("A").catch(() => {});
     cubeStopSound("B").catch(() => {});
   } else {
-    // resume cube speaker for current notes
     for (const tag of ["A","B"]) {
-      const m = cubeState[tag].currentMidi;
-      if (m !== null && m !== undefined) cubePlayMidi(tag, m).catch(() => {});
+      const play = cubeState[tag].currentPlayMidi;
+      if (play !== null && play !== undefined) cubePlayMidi(tag, play).catch(() => {});
     }
   }
 });
+
+// Rebuild on resize/orientation changes (A)
+let resizeTimer = null;
+function scheduleRebuild() {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => buildPiano(), 120);
+}
+window.addEventListener("resize", scheduleRebuild);
+window.addEventListener("orientationchange", scheduleRebuild);
