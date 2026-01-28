@@ -19,8 +19,11 @@ const testNotesEl = document.querySelector("#testNotes");
 const btnLayoutEl = document.querySelector("#btnLayout");
 const btnRun20El = document.querySelector("#btnRun20"); // may be null if index.html not updated
 
-// --- GLOBAL SHIFT: lower everything by 1 octave (-12)
-const GLOBAL_MIDI_SHIFT = -12;
+// --- SHIFT設定 ---
+// toioキューブから鳴る音は1オクターブ下げる
+const CUBE_MIDI_SHIFT = -12;
+// ブラウザの鍵盤＆テストボタンは元の高さ（= cube より1オクターブ高い）
+const USER_MIDI_SHIFT = 0;
 
 // --- Piano UI -------------------------------------------------
 const WHITE = new Set([0,2,4,5,7,9,11]);
@@ -338,8 +341,8 @@ async function connectCube(tag) {
         return;
       }
 
-      const uiMidi = playable.midi; // for UI/highlight
-      const playMidi = clampMidi(uiMidi + GLOBAL_MIDI_SHIFT); // actual sounding midi
+        const uiMidi = playable.midi; // UIでの音階（鍵盤ハイライト用）
+        const playMidi = clampMidi(uiMidi + CUBE_MIDI_SHIFT); // 実際に鳴らすmidi（toio用：-12）
 
       const prevPlay = cubeState[tag].currentPlayMidi;
 
@@ -395,7 +398,7 @@ let userPressedPlayMidi = null;
 async function userAttack(midi) {
   await ensureAudio();
   userPressedMidi = midi; // UI midi
-  const playMidi = clampMidi(midi + GLOBAL_MIDI_SHIFT);
+  const playMidi = clampMidi(midi + USER_MIDI_SHIFT); // ブラウザ用のシフト
   userPressedPlayMidi = playMidi;
   pressKeyUser(midi);
   startNote(playMidi);
